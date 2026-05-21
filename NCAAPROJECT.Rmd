@@ -1,0 +1,275 @@
+---
+title: "NCAA WOMENS VOLLEYBALL SERVING"
+author: "Matthew Nigro"
+date: "2026-05-06"
+output: html_document
+---
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+
+volleyball <- read_csv("ncaa_w_boxscores_2012-2019.csv")
+```
+
+```{r}
+# Step 1: Keep only variables related to my research question
+volleyball <- volleyball %>%
+  select(
+    team,
+    serviceAces,
+    serviceErrors,
+    points
+  ) %>%
+  distinct()
+```
+
+```{r}
+# Step 2: Check dataset size
+dim(volleyball)
+
+# Check variable types
+glimpse(volleyball)
+
+# Summary statistics
+summary(volleyball)
+```
+```{r}
+# Check for missing values
+colSums(is.na(volleyball))
+```
+
+```{r}
+# Create serving aggression metric
+volleyball <- volleyball %>%
+  mutate(
+    ace_to_error_ratio = serviceAces / serviceErrors
+  )
+
+summary(volleyball$ace_to_error_ratio)
+```
+
+```{r}
+# Fix infinite values in serving aggression ratio
+volleyball <- volleyball %>%
+  mutate(
+    ace_to_error_ratio = ifelse(
+      serviceErrors == 0,
+      NA,
+      serviceAces / serviceErrors
+    )
+  )
+
+summary(volleyball$ace_to_error_ratio)
+```
+
+```{r}
+# Histogram of service aces
+ggplot(volleyball, aes(x = serviceAces)) +
+  geom_histogram(bins = 30) +
+  labs(
+    title = "Distribution of Service Aces",
+    x = "Service Aces",
+    y = "Frequency"
+  )
+```
+
+```{r}
+# Boxplot of service errors
+ggplot(volleyball, aes(y = serviceErrors)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Service Errors",
+    y = "Service Errors"
+  )
+```
+```{r}
+# Scatterplot of service aces vs service errors
+ggplot(volleyball, aes(x = serviceAces, y = serviceErrors)) +
+  geom_point(alpha = 0.3) +
+  labs(
+    title = "Service Aces vs Service Errors",
+    x = "Service Aces",
+    y = "Service Errors"
+  )
+```
+
+```{r}
+# for checkpoint 8... Transform variables for modeling
+
+volleyball <- volleyball %>%
+  mutate(
+    log_serviceAces = log1p(serviceAces),
+    log_serviceErrors = log1p(serviceErrors),
+    log_ace_to_error_ratio = log1p(ace_to_error_ratio)
+  )
+
+summary(volleyball$log_serviceAces)
+summary(volleyball$log_serviceErrors)
+summary(volleyball$log_ace_to_error_ratio)
+```
+
+```{r}
+# Standardized transformed variables using z-scores
+
+volleyball <- volleyball %>%
+  mutate(
+    z_serviceAces = as.numeric(scale(log_serviceAces)),
+    z_serviceErrors = as.numeric(scale(log_serviceErrors)),
+    z_ace_to_error_ratio = as.numeric(scale(log_ace_to_error_ratio))
+  )
+
+summary(volleyball$z_serviceAces)
+summary(volleyball$z_serviceErrors)
+summary(volleyball$z_ace_to_error_ratio)
+```
+
+```{r}
+# new Histogram after transformation
+
+ggplot(volleyball, aes(x = log_serviceAces)) +
+  geom_histogram(bins = 30) +
+  labs(
+    title = "Transformed Distribution of Service Aces",
+    x = "Log Service Aces",
+    y = "Frequency"
+  )
+```
+
+```{r}
+# Boxplot after transformation
+
+ggplot(volleyball, aes(y = log_serviceErrors)) +
+  geom_boxplot() +
+  labs(
+    title = "Transformed Distribution of Service Errors",
+    y = "Log Service Errors"
+  )
+```
+
+```{r}
+# Scatterplot after transformation
+
+ggplot(volleyball, aes(x = log_serviceAces, y = log_serviceErrors)) +
+  geom_point(alpha = 0.3) +
+  labs(
+    title = "Transformed Service Aces vs Service Errors",
+    x = "Log Service Aces",
+    y = "Log Service Errors"
+  )
+```
+
+```{r}
+# Correlation after transformation
+
+cor(volleyball$log_serviceAces, volleyball$log_serviceErrors, use = "complete.obs")
+```
+
+```{r}
+# Updated data dictionary check
+
+glimpse(volleyball)
+```
+
+```{r}
+# Create team-level dataset for modeling
+
+team_model <- volleyball %>%
+  group_by(team) %>%
+  summarise(
+    avg_serviceAces = mean(serviceAces, na.rm = TRUE),
+    avg_serviceErrors = mean(serviceErrors, na.rm = TRUE),
+    avg_ace_to_error_ratio = mean(ace_to_error_ratio, na.rm = TRUE),
+    avg_points = mean(points, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Create proxy for team success using points
+team_model <- team_model %>%
+  mutate(
+    winning_percentage = avg_points / max(avg_points)
+  )
+
+glimpse(team_model)
+
+summary(team_model)
+```
+
+```{r}
+# Multiple Linear Regression Model
+
+model1 <- lm(
+  winning_percentage ~ avg_serviceAces + avg_serviceErrors + avg_ace_to_error_ratio,
+  data = team_model
+)
+
+summary(model1)
+```
+
+```{r}
+# Predicted vs Actual Values
+
+team_model$predicted <- predict(model1)
+
+ggplot(team_model, aes(x = winning_percentage, y = predicted)) +
+  geom_point(alpha = 0.6) +
+  labs(
+    title = "Actual vs Predicted Winning Percentage",
+    x = "Actual Winning Percentage",
+    y = "Predicted Winning Percentage"
+  )
+```
+
+```{r}
+model_results <- data.frame(
+  fitted = fitted(model1),
+  residuals = resid(model1)
+)
+
+ggplot(model_results, aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.6) +
+  labs(
+    title = "Residual Plot",
+    x = "Fitted Values",
+    y = "Residuals"
+  )
+```
+
+```{r}
+# Model 2: K-Means Clustering
+
+library(dplyr)
+library(ggplot2)
+
+cluster_data <- team_model %>%
+  select(avg_serviceAces, avg_serviceErrors, avg_ace_to_error_ratio) %>%
+  na.omit()
+
+set.seed(123)
+
+kmeans_model <- kmeans(cluster_data, centers = 3, nstart = 25)
+
+team_model_clean <- team_model %>%
+  filter(complete.cases(avg_serviceAces, avg_serviceErrors, avg_ace_to_error_ratio))
+
+team_model_clean$cluster <- as.factor(kmeans_model$cluster)
+
+kmeans_model$size
+kmeans_model$centers
+
+ggplot(team_model_clean,
+       aes(x = avg_serviceAces,
+           y = avg_serviceErrors,
+           color = cluster)) +
+  geom_point(size = 3, alpha = 0.7) +
+  labs(
+    title = "Team Clusters Based on Serving Performance",
+    x = "Average Service Aces",
+    y = "Average Service Errors"
+  )
+
+team_model_clean %>%
+  group_by(cluster) %>%
+  summarise(avg_win_pct = mean(winning_percentage, na.rm = TRUE))
+```
+
